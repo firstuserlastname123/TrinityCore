@@ -45,6 +45,7 @@
 #include "Opcodes.h"
 #include "Pet.h"
 #include "Player.h"
+#include "PlayerbotMgr.h"
 #include "QueryPackets.h"
 #include "PlayerDump.h"
 #include "QueryHolder.h"
@@ -778,6 +779,22 @@ void WorldSession::HandleContinuePlayerLogin()
     });
 }
 
+bool WorldSession::BeginServerPlayerLogin(ObjectGuid guid)
+{
+    if (!IsServerOrigin() || PlayerLoading() || GetPlayer())
+        return false;
+
+    CharacterCacheEntry const* character = sCharacterCache->GetCharacterCacheByGuid(guid);
+    if (!character || character->AccountId != GetAccountId())
+        return false;
+
+    m_playerLoading = guid;
+    HandleContinuePlayerLogin();
+    if (PlayerLoading())
+        sWorld->GetPlayerbotMgr().OnLoginStarted(guid.GetCounter());
+    return PlayerLoading();
+}
+
 void WorldSession::AbortLogin(WorldPackets::Character::LoginFailureReason reason)
 {
     if (!PlayerLoading() || GetPlayer())
@@ -810,6 +827,8 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder const& holder)
         KickPlayer();                                       // disconnect client, player no set to session and it will not deleted or saved at kick
         delete pCurrChar;                                   // delete it manually
         m_playerLoading.Clear();
+        if (IsServerOrigin())
+            sWorld->GetPlayerbotMgr().OnLoginComplete(GetAccountId(), playerGuid.GetCounter(), false, "Player::LoadFromDB failed");
         return;
     }
 
@@ -1104,6 +1123,10 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder const& holder)
         pCurrChar->SetStandState(UNIT_STAND_STATE_STAND);
 
     m_playerLoading.Clear();
+
+    if (IsServerOrigin())
+        sWorld->GetPlayerbotMgr().OnLoginComplete(GetAccountId(), playerGuid.GetCounter(), pCurrChar->IsInWorld(),
+            pCurrChar->IsInWorld() ? "online" : "map entry or transfer did not complete");
 
     // Handle Login-Achievements (should be handled after loading)
     _player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_ON_LOGIN, 1);

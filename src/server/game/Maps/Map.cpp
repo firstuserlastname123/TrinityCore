@@ -41,6 +41,7 @@
 #include "ObjectMgr.h"
 #include "OutdoorPvPMgr.h"
 #include "Pet.h"
+#include "PlayerbotMgr.h"
 #include "PoolMgr.h"
 #include "PhasingHandler.h"
 #include "ScriptMgr.h"
@@ -756,6 +757,8 @@ void Map::Update(uint32 t_diff)
         ProcessRelocationNotifies(t_diff);
 
     sScriptMgr->OnMapUpdate(this, t_diff);
+    // Consume Playerbot intents on this map's owning update thread.
+    sWorld->GetPlayerbotMgr().UpdateMap(this, t_diff);
 }
 
 struct ResetNotifier

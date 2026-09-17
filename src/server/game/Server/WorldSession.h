@@ -51,6 +51,12 @@ class Warden;
 class WorldPacket;
 class WorldSession;
 class WorldSocket;
+
+enum class SessionOrigin : uint8
+{
+    Network,
+    Server
+};
 struct AddonInfo;
 struct AreaTableEntry;
 struct AuctionEntry;
@@ -475,7 +481,7 @@ struct PacketCounter
 class TC_GAME_API WorldSession
 {
     public:
-        WorldSession(uint32 id, std::string&& name, std::shared_ptr<WorldSocket> sock, AccountTypes sec, uint8 expansion, time_t mute_time, LocaleConstant locale, uint32 recruiter, bool isARecruiter);
+        WorldSession(uint32 id, std::string&& name, std::shared_ptr<WorldSocket> sock, AccountTypes sec, uint8 expansion, time_t mute_time, LocaleConstant locale, uint32 recruiter, bool isARecruiter, SessionOrigin origin = SessionOrigin::Network);
         ~WorldSession();
 
         bool PlayerLoading() const { return !m_playerLoading.IsEmpty(); }
@@ -483,6 +489,12 @@ class TC_GAME_API WorldSession
         bool PlayerLogoutWithSave() const { return m_playerLogout && m_playerSave; }
         bool PlayerRecentlyLoggedOut() const { return m_playerRecentlyLogout; }
         bool PlayerDisconnected() const;
+        SessionOrigin GetOrigin() const { return _origin; }
+        bool IsServerOrigin() const { return _origin == SessionOrigin::Server; }
+        void RequestServerRemoval() { _serverRemovalRequested = true; }
+        void QueueServerPlayerLogin(ObjectGuid guid) { m_serverLoginGuid = guid; }
+        ObjectGuid GetQueuedServerPlayerLogin() const { return m_serverLoginGuid; }
+        bool BeginServerPlayerLogin(ObjectGuid guid);
 
         void ReadAddonsInfo(ByteBuffer& data);
         void SendAddonsInfo();
@@ -1358,6 +1370,9 @@ class TC_GAME_API WorldSession
      // std::string m_LAddress;                             // Last Attempted Remote Adress - we can not set attempted ip for a non-existing session!
 
         AccountTypes _security;
+        SessionOrigin const _origin;
+        bool _serverRemovalRequested;
+        ObjectGuid m_serverLoginGuid;
         uint32 _accountId;
         std::string _accountName;
         uint8 m_accountExpansion;

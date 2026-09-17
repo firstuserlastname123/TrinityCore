@@ -34,8 +34,10 @@
 #include <atomic>
 #include <list>
 #include <map>
+#include <memory>
 #include <unordered_map>
 
+namespace Playerbots { class PlayerbotMgr; }
 class Player;
 class WorldPacket;
 class WorldSession;
@@ -707,6 +709,7 @@ class TC_GAME_API World
         void Update(uint32 diff);
 
         void UpdateSessions(uint32 diff);
+        Playerbots::PlayerbotMgr& GetPlayerbotMgr() { return *_playerbotMgr; }
         /// Set a server rate (see #Rates)
         void setRate(Rates rate, float value) { rate_values[rate]=value; }
         /// Get a server rate (see #Rates)
@@ -852,6 +855,7 @@ class TC_GAME_API World
         time_t mail_timer_expires;
 
         SessionMap m_sessions;
+        std::unique_ptr<Playerbots::PlayerbotMgr> _playerbotMgr;
         typedef std::unordered_map<uint32, time_t> DisconnectMap;
         DisconnectMap m_disconnects;
         uint32 m_maxActiveSessionCount;

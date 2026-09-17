@@ -68,6 +68,7 @@
 #include "ObjectMgr.h"
 #include "OutdoorPvPMgr.h"
 #include "PetitionMgr.h"
+#include "PlayerbotMgr.h"
 #include "Player.h"
 #include "PlayerDump.h"
 #include "PoolMgr.h"
@@ -130,6 +131,7 @@ PersistentWorldVariable const World::NextGuildWeeklyResetTimeVarId{ "NextGuildWe
 /// World constructor
 World::World()
 {
+    _playerbotMgr = std::make_unique<Playerbots::PlayerbotMgr>();
     m_playerLimit = 0;
     m_allowedSecurityLevel = SEC_PLAYER;
     m_allowMovement = true;
@@ -337,6 +339,15 @@ void World::AddSession_(WorldSession* s)
 {
     ASSERT(s);
 
+    // A server-origin session must never replace or kick a real account session.
+    if (s->IsServerOrigin() && m_sessions.find(s->GetAccountId()) != m_sessions.end())
+    {
+        _playerbotMgr->OnLoginComplete(s->GetAccountId(), s->GetQueuedServerPlayerLogin().GetCounter(), false, "account session conflict while enrolling");
+        s->RequestServerRemoval();
+        delete s;
+        return;
+    }
+
     //NOTE - Still there is race condition in WorldSession* being used in the Sockets
 
     ///- kick already loaded player with same account (if any) and remove session
@@ -377,7 +388,7 @@ void World::AddSession_(WorldSession* s)
     if (decrease_session)
         --Sessions;
 
-    if (pLimit > 0 && Sessions >= pLimit && !s->HasPermission(rbac::RBAC_PERM_SKIP_QUEUE) && !HasRecentlyDisconnected(s))
+    if (!s->IsServerOrigin() && pLimit > 0 && Sessions >= pLimit && !s->HasPermission(rbac::RBAC_PERM_SKIP_QUEUE) && !HasRecentlyDisconnected(s))
     {
         AddQueuedPlayer(s);
         UpdateMaxSessionCounters();
@@ -385,7 +396,14 @@ void World::AddSession_(WorldSession* s)
         return;
     }
 
-    s->InitializeSession();
+    if (!s->IsServerOrigin())
+        s->InitializeSession();
+    else if (!s->BeginServerPlayerLogin(s->GetQueuedServerPlayerLogin()))
+    {
+        _playerbotMgr->OnLoginComplete(s->GetAccountId(), s->GetQueuedServerPlayerLogin().GetCounter(), false, "login holder initialization rejected");
+        s->RequestServerRemoval();
+        return;
+    }
 
     UpdateMaxSessionCounters();
 
@@ -1671,6 +1689,7 @@ void World::SetInitialWorldSettings()
 
     ///- Initialize config settings
     LoadConfigSettings();
+    _playerbotMgr->LoadConfig();
 
     ///- Initialize Allowed Security Level
     LoadDBAllowedSecurityLevel();
@@ -2490,6 +2509,7 @@ void World::Update(uint32 diff)
     sWorldUpdateTime.RecordUpdateTimeReset();
     UpdateSessions(diff);
     sWorldUpdateTime.RecordUpdateTimeDuration("UpdateSessions");
+    _playerbotMgr->Update(diff);
 
     /// <li> Update uptime table
     if (m_timers[WUPDATE_UPTIME].Passed())
@@ -3030,7 +3050,9 @@ void World::_UpdateGameTime()
         ///- ... and it is overdue, stop the world (set m_stopEvent)
         if (m_ShutdownTimer <= elapsed)
         {
-            if (!(m_ShutdownMask & SHUTDOWN_MASK_IDLE) || GetActiveAndQueuedSessionCount() == 0)
+            if (!_playerbotMgr->IsDrained())
+                m_ShutdownTimer = 1;
+            else if (!(m_ShutdownMask & SHUTDOWN_MASK_IDLE) || GetActiveAndQueuedSessionCount() == 0)
                 m_stopEvent = true;                         // exist code already set
             else
                 m_ShutdownTimer = 1;                        // minimum timer value to wait idle state
@@ -3052,13 +3074,18 @@ void World::ShutdownServ(uint32 time, uint32 options, uint8 exitcode, const std:
     if (IsStopped())
         return;
 
+    // Start canonical bot logout while maps and databases are still operational.
+    _playerbotMgr->BeginShutdown();
+
     m_ShutdownMask = options;
     m_ExitCode = exitcode;
 
     ///- If the shutdown time is 0, set m_stopEvent (except if shutdown is 'idle' with remaining sessions)
     if (time == 0)
     {
-        if (!(options & SHUTDOWN_MASK_IDLE) || GetActiveAndQueuedSessionCount() == 0)
+        if (!_playerbotMgr->IsDrained())
+            m_ShutdownTimer = 1;
+        else if (!(options & SHUTDOWN_MASK_IDLE) || GetActiveAndQueuedSessionCount() == 0)
             m_stopEvent = true;                             // exist code already set
         else
             m_ShutdownTimer = 1;                            //So that the session count is re-evaluated at next world tick

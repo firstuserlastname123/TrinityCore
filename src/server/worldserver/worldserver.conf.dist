@@ -4,6 +4,27 @@
 [worldserver]
 
 ###################################################################################################
+# PLAYERBOT MILESTONE 1
+#
+#    Playerbots.Enable
+#        Enable the bounded server-side real-character lifecycle proof. Default: 0 (disabled).
+#
+#    Playerbots.AccountIds / Playerbots.CharacterGuids
+#        Comma- or whitespace-separated decimal allowlists. Both must contain the selected Warrior.
+#
+#    Playerbots.UpdateIntervalMS
+#        Runtime heartbeat interval. Minimum 100 milliseconds.
+#
+#    Playerbots.TelemetryLog
+#        Emit the lower-frequency Playerbots location heartbeat.
+
+Playerbots.Enable = 0
+Playerbots.AccountIds = ""
+Playerbots.CharacterGuids = ""
+Playerbots.UpdateIntervalMS = 500
+Playerbots.TelemetryLog = 1
+
+###################################################################################################
 # SECTION INDEX
 #
 #    EXAMPLE CONFIG
